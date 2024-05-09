@@ -1,0 +1,27 @@
+[out:xml][timeout:25];
+(
+  // Amenities, Buildings, Shops, Tourism, Leisure
+  node["amenity"]({{bbox}});
+  way["amenity"]({{bbox}});
+  node["shop"]({{bbox}});
+  way["shop"]({{bbox}});
+  node["tourism"]({{bbox}});
+  way["tourism"]({{bbox}});
+  node["leisure"]({{bbox}});
+  way["leisure"]({{bbox}});
+
+  // Public Transportation
+  node["public_transport"]({{bbox}});
+  way["public_transport"]({{bbox}});
+  node["highway"="bus_stop"]({{bbox}});
+  node["railway"="station"]({{bbox}});
+  way["railway"="station"]({{bbox}});
+
+  // Healthcare
+  node["healthcare"]({{bbox}});
+  way["healthcare"]({{bbox}});
+);
+
+out body;
+>;
+out skel qt;

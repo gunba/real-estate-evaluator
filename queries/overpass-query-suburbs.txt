@@ -1,0 +1,8 @@
+[out:json][timeout:25];
+(
+  relation["boundary"="administrative"]["admin_level"="9"]["type"="boundary"]({{bbox}});
+  way["boundary"="administrative"]["admin_level"="9"]["type"="boundary"]({{bbox}});
+);
+out body;
+>;
+out skel qt;
