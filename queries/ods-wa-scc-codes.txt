@@ -1,0 +1,1 @@
+https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/georef-australia-state-suburb/exports/json?lang=en&qv1=(%22Western%20Australia%22)&timezone=Australia%2FPerth
