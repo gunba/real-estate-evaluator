@@ -62,11 +62,11 @@ with open("mesh_block_census.csv") as file:
 # Create the new GeoJSON object
 new_geojson = {
     "type": "FeatureCollection",
-    "name": "aus_mesh_blocks_census",
+    "name": "aus_mesh_blocks_processed",
     "crs": geojson_data["crs"],
     "features": new_features
 }
 
 # Save the new GeoJSON data to a file
-with open("aus_mesh_blocks_census.geojson", "w") as file:
+with open("aus_mesh_blocks_processed.geojson", "w") as file:
     json.dump(new_geojson, file)
