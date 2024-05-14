@@ -125,6 +125,4 @@ except Exception as e:
     traceback.print_exc()
 
 finally:
-    print('Scraping completed. Press any key to exit.')
-    input()
     driver.quit()
