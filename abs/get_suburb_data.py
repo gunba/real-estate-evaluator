@@ -29,6 +29,9 @@ def process_suburb(suburb):
         scc_code = suburb['scc_code'][0]
         scc_name = suburb['scc_name'][0]
 
+        # Strip " (WA)" from the suburb name
+        scc_name = scc_name.replace(" (WA)", "")
+
         # Construct the URL for the ABS website
         url = f"https://www.abs.gov.au/census/find-census-data/quickstats/2021/SAL{scc_code}"
 
@@ -81,9 +84,6 @@ def process_suburb(suburb):
                     summary_data[
                         header_map[key]
                     ] = value
-
-        # Strip " (WA)" from the suburb name
-        scc_name = scc_name.replace(" (WA)", "")
 
         log_and_print(f"Processed suburb: {scc_name}\n{json.dumps(summary_data, indent=2)}")
 

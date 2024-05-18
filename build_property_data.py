@@ -1,14 +1,68 @@
 import json
 import math
 import time
-from shapely.geometry import Point
-from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Pool
+from tqdm import tqdm
 
 # Constants
 PERTH_CBD_COORDS = (115.8617, -31.9514)
 PERTH_AIRPORT_COORDS = (115.9672, -31.9385)
-LOCAL_COMMUNITY_RADIUS = 1  # in kilometers
+LOCAL_COMMUNITY_RADIUS = 1.5  # in kilometers
 EARTH_RADIUS = 6371.0  # in kilometers
+
+# Map for how to aggregate features
+feature_categories = {
+    'fuel_station': 'nearest',
+    'bus_stop': 'nearest',
+    'train_station': 'nearest',
+    'police_station': 'nearest',
+    'healthcare_facility': 'nearest',
+    'doctor_office': 'nearest',
+    'dental_office': 'nearest',
+    'primary_education': 'nearest',
+    'higher_education': 'nearest',
+    'library': 'nearest',
+    'fire_station': 'nearest',
+    'post_office': 'nearest',
+    'community_center': 'nearest',
+    'administrative_building': 'nearest',
+    'financial_services': 'nearest',
+    'religious_building': 'nearest',
+    'dining': 'local',
+    'shop': 'local',
+    'waste_facility': 'local',
+    'tourism': 'local',
+    'sports_facility': 'local',
+    'leisure_facility': 'local',
+    'public_art': 'local',
+    'swimming_pool': 'local',
+    'garden': 'local',
+    'social_facility': 'local'
+}
+
+# Create the feature template for use inside the property data function
+osm_feature_template = {}
+for feature_type, category in feature_categories.items():
+    if category == 'nearest':
+        osm_feature_template[f'nearest_{feature_type}'] = float('inf')
+    elif category == 'local':
+        osm_feature_template[f'local_{feature_type}'] = 0
+
+# Load the property data from reiwa/reiwa_listings.json
+with open('reiwa/reiwa_listings.json', 'r') as file:
+    property_data_list = json.load(file)
+
+# Load the mesh block data
+with open('mesh/aus_mesh_blocks_processed.geojson', 'r') as file:
+    mesh_block_data = json.load(file)
+
+# Load the OSM node data
+with open('osm/osm_nodes_processed.geojson', 'r') as file:
+    osm_node_data = json.load(file)
+
+# Load the suburb data from suburb_data.json
+with open('suburb_data.json', 'r') as file:
+    suburb_data = json.load(file)
 
 def haversine_distance(lon1, lat1, lon2, lat2):
     """
@@ -28,14 +82,21 @@ def process_property(property_data):
     address_parts = property_data['address'].split(', ')
     property_data['suburb'] = address_parts[-1]
 
-    property_point = Point(property_data['longitude'], property_data['latitude'])
+    # Check if the suburb exists in the suburb data
+    suburb = property_data['suburb']
+    if suburb not in suburb_data:
+        return None
+
+    property_lon = property_data['longitude']
+    property_lat = property_data['latitude']
 
     # Calculate the local community population and dwelling count
     local_community_population = 0
     local_community_dwellings = 0
     for feature in mesh_block_data['features']:
-        mesh_block_point = Point(feature['geometry']['coordinates'])
-        distance = haversine_distance(property_point.x, property_point.y, mesh_block_point.x, mesh_block_point.y)
+        mesh_block_lon = feature['geometry']['coordinates'][0]
+        mesh_block_lat = feature['geometry']['coordinates'][1]
+        distance = haversine_distance(property_lon, property_lat, mesh_block_lon, mesh_block_lat)
         if distance <= LOCAL_COMMUNITY_RADIUS:
             local_community_population += feature['properties']['Population']
             local_community_dwellings += feature['properties']['Dwelling']
@@ -43,130 +104,89 @@ def process_property(property_data):
     property_data['local_community_population'] = local_community_population
     property_data['local_community_dwellings'] = local_community_dwellings
 
-    # Calculate distances and counts for OSM node features
-    osm_features = {
-        'nearest_fuel_station': float('inf'),
-        'nearest_bus_stop': float('inf'),
-        'nearest_train_station': float('inf'),
-        'nearest_police_station': float('inf'),
-        'nearest_healthcare_facility': float('inf'),
-        'nearest_doctor_office': float('inf'),
-        'nearest_dental_office': float('inf'),
-        'nearest_primary_education': float('inf'),
-        'nearest_higher_education': float('inf'),
-        'nearest_library': float('inf'),
-        'nearest_fire_station': float('inf'),
-        'nearest_post_office': float('inf'),
-        'nearest_community_center': float('inf'),
-        'nearest_administrative_building': float('inf'),
-        'nearest_financial_services': float('inf'),
-        'nearest_religious_building': float('inf'),
-        'local_dining_count': 0,
-        'local_shop_count': 0,
-        'local_waste_facility_count': 0,
-        'local_tourism_count': 0,
-        'local_sports_facility_count': 0,
-        'local_leisure_facility_count': 0,
-        'local_public_art_count': 0,
-        'local_swimming_pool_count': 0,
-        'local_garden_count': 0,
-        'local_social_facility_count': 0
-    }
+    # Calculate haversine distances for each OSM node feature and store them in osm_node_indices
+    osm_node_indices = []
+    for idx, feature in enumerate(osm_node_data['features']):
+        osm_lon = feature['geometry']['coordinates'][0]
+        osm_lat = feature['geometry']['coordinates'][1]
+        distance = haversine_distance(property_lon, property_lat, osm_lon, osm_lat)
+        osm_node_indices.append((idx, distance))
 
-    for feature in osm_node_data['features']:
-        osm_point = Point(feature['geometry']['coordinates'])
-        distance = haversine_distance(property_point.x, property_point.y, osm_point.x, osm_point.y)
+    # Sort the indices of OSM node features by distance to the property
+    osm_node_indices.sort(key=lambda x: x[1])
 
-        if 'fuel_station' in feature['properties'] and distance < osm_features['nearest_fuel_station']:
-            osm_features['nearest_fuel_station'] = distance
-        if 'bus_stop' in feature['properties'] and distance < osm_features['nearest_bus_stop']:
-            osm_features['nearest_bus_stop'] = distance
-        if 'train_station' in feature['properties'] and distance < osm_features['nearest_train_station']:
-            osm_features['nearest_train_station'] = distance
-        if 'police_station' in feature['properties'] and distance < osm_features['nearest_police_station']:
-            osm_features['nearest_police_station'] = distance
-        if 'healthcare_facility' in feature['properties'] and distance < osm_features['nearest_healthcare_facility']:
-            osm_features['nearest_healthcare_facility'] = distance
-        if 'doctor_office' in feature['properties'] and distance < osm_features['nearest_doctor_office']:
-            osm_features['nearest_doctor_office'] = distance
-        if 'dental_office' in feature['properties'] and distance < osm_features['nearest_dental_office']:
-            osm_features['nearest_dental_office'] = distance
-        if 'primary_education' in feature['properties'] and distance < osm_features['nearest_primary_education']:
-            osm_features['nearest_primary_education'] = distance
-        if 'higher_education' in feature['properties'] and distance < osm_features['nearest_higher_education']:
-            osm_features['nearest_higher_education'] = distance
-        if 'library' in feature['properties'] and distance < osm_features['nearest_library']:
-            osm_features['nearest_library'] = distance
-        if 'fire_station' in feature['properties'] and distance < osm_features['nearest_fire_station']:
-            osm_features['nearest_fire_station'] = distance
-        if 'post_office' in feature['properties'] and distance < osm_features['nearest_post_office']:
-            osm_features['nearest_post_office'] = distance
-        if 'community_center' in feature['properties'] and distance < osm_features['nearest_community_center']:
-            osm_features['nearest_community_center'] = distance
-        if 'administrative_building' in feature['properties'] and distance < osm_features['nearest_administrative_building']:
-            osm_features['nearest_administrative_building'] = distance
-        if 'financial_services' in feature['properties'] and distance < osm_features['nearest_financial_services']:
-            osm_features['nearest_financial_services'] = distance
-        if 'religious_building' in feature['properties'] and distance < osm_features['nearest_religious_building']:
-            osm_features['nearest_religious_building'] = distance
+    # Create copy of feature template for storing data
+    osm_features = osm_feature_template.copy()
 
-        if distance <= LOCAL_COMMUNITY_RADIUS:
-            if 'dining' in feature['properties']:
-                osm_features['local_dining_count'] += 1
-            if 'shop' in feature['properties']:
-                osm_features['local_shop_count'] += 1
-            if 'waste_facility' in feature['properties']:
-                osm_features['local_waste_facility_count'] += 1
-            if 'tourism' in feature['properties']:
-                osm_features['local_tourism_count'] += 1
-            if 'sports_facility' in feature['properties']:
-                osm_features['local_sports_facility_count'] += 1
-            if 'leisure_facility' in feature['properties']:
-                osm_features['local_leisure_facility_count'] += 1
-            if 'public_art' in feature['properties']:
-                osm_features['local_public_art_count'] += 1
-            if 'swimming_pool' in feature['properties']:
-                osm_features['local_swimming_pool_count'] += 1
-            if 'garden' in feature['properties']:
-                osm_features['local_garden_count'] += 1
-            if 'social_facility' in feature['properties']:
-                osm_features['local_social_facility_count'] += 1
+    # Once we have found values for all nearest_ keys, we can exit once we exceed local distance
+    all_nearest_found = False
+
+    for idx, distance in osm_node_indices:
+        feature = osm_node_data['features'][idx]
+        properties = feature['properties']
+
+        for feature_type, category in feature_categories.items():
+            if feature_type in properties:
+                if category == 'nearest' and distance < osm_features[f'nearest_{feature_type}']:
+                    osm_features[f'nearest_{feature_type}'] = distance
+                    break
+                elif category == 'local' and distance <= LOCAL_COMMUNITY_RADIUS:
+                    osm_features[f'local_{feature_type}'] += 1
+
+        all_nearest_found = all(value != float('inf') for key, value in osm_features.items() if key.startswith('nearest_'))
+
+        if all_nearest_found and distance > LOCAL_COMMUNITY_RADIUS:
+            break
 
     # Calculate distances to Perth CBD and airport
-    property_data['distance_to_perth_cbd'] = haversine_distance(property_point.x, property_point.y, PERTH_CBD_COORDS[0], PERTH_CBD_COORDS[1])
-    property_data['distance_to_perth_airport'] = haversine_distance(property_point.x, property_point.y, PERTH_AIRPORT_COORDS[0], PERTH_AIRPORT_COORDS[1])
+    property_data['distance_to_perth_cbd'] = haversine_distance(property_lon, property_lat, PERTH_CBD_COORDS[0], PERTH_CBD_COORDS[1])
+    property_data['distance_to_perth_airport'] = haversine_distance(property_lon, property_lat, PERTH_AIRPORT_COORDS[0], PERTH_AIRPORT_COORDS[1])
 
     # Merge the OSM feature data into the property data
     property_data.update(osm_features)
 
+    # Merge the suburb data into the property data
+    property_data.update(suburb_data[suburb])
+
     return property_data
 
-# Load the property data from reiwa/reiwa_listings.json
-with open('reiwa/reiwa_listings.json', 'r') as file:
-    property_data_list = json.load(file)
+if __name__ == '__main__':
+    # Process properties using multiprocessing and measure execution time
+    start_time = time.time()
 
-# Load the mesh block data
-with open('mesh/aus_mesh_blocks_processed.geojson', 'r') as file:
-    mesh_block_data = json.load(file)
+    with Pool() as pool:
+        results = []
+        with tqdm(total=len(property_data_list), unit='property', desc='Processing properties') as pbar:
+            for i, _ in enumerate(pool.imap_unordered(process_property, property_data_list), start=1):
+                results.append(_)
+                pbar.update()
 
-# Load the OSM node data
-with open('osm/osm_nodes_processed.geojson', 'r') as file:
-    osm_node_data = json.load(file)
+    updated_property_data_list = [property for property in results if property is not None]
 
-# Process a subset of properties (1000 records) and measure execution time
-start_time = time.time()
-subset_data_list = property_data_list[:10]
+    end_time = time.time()
+    execution_time = end_time - start_time
 
-with ThreadPoolExecutor() as executor:
-    results = list(executor.map(process_property, subset_data_list))
+    print(f"\nProcessed {len(property_data_list)} properties in {execution_time:.2f} seconds.")
 
-end_time = time.time()
-execution_time = end_time - start_time
+    # Calculate missing suburbs
+    missing_suburbs = {}
+    for property_data in property_data_list:
+        address = property_data['address']
+        if not any(data['address'] == address for data in updated_property_data_list):
+            suburb = address.split(', ')[-1]
+            if suburb not in missing_suburbs:
+                missing_suburbs[suburb] = 0
+            missing_suburbs[suburb] += 1
 
-print(f"Processed {len(subset_data_list)} properties in {execution_time:.2f} seconds.")
+    print(f"Excluded {len(property_data_list) - len(updated_property_data_list)} properties due to missing suburb data.")
 
-# Save the updated property data to a new JSON file
-with open('property_data_enriched.json', 'w') as file:
-    json.dump(results, file, indent=2)
+    # Print the missing suburbs and their counts
+    print("\nMissing suburbs:")
+    for suburb, count in missing_suburbs.items():
+        print(f"{suburb}: {count} properties")
 
-print("Property data updated with additional information and saved to 'property_data_enriched.json'.")
+    # Save the updated property data to a new JSON file
+    with open('property_data.json', 'w') as file:
+        json.dump(updated_property_data_list, file, indent=2)
+
+    print("Property data updated with additional information and saved to 'property_data.json'.")
