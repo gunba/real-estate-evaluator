@@ -78,10 +78,6 @@ def haversine_distance(lon1, lat1, lon2, lat2):
     return distance
 
 def process_property(property_data):
-    # Extract the suburb from the address field
-    address_parts = property_data['address'].split(', ')
-    property_data['suburb'] = address_parts[-1]
-
     # Check if the suburb exists in the suburb data
     suburb = property_data['suburb']
     if suburb not in suburb_data:
@@ -167,23 +163,6 @@ if __name__ == '__main__':
     execution_time = end_time - start_time
 
     print(f"\nProcessed {len(property_data_list)} properties in {execution_time:.2f} seconds.")
-
-    # Calculate missing suburbs
-    missing_suburbs = {}
-    for property_data in property_data_list:
-        address = property_data['address']
-        if not any(data['address'] == address for data in updated_property_data_list):
-            suburb = address.split(', ')[-1]
-            if suburb not in missing_suburbs:
-                missing_suburbs[suburb] = 0
-            missing_suburbs[suburb] += 1
-
-    print(f"Excluded {len(property_data_list) - len(updated_property_data_list)} properties due to missing suburb data.")
-
-    # Print the missing suburbs and their counts
-    print("\nMissing suburbs:")
-    for suburb, count in missing_suburbs.items():
-        print(f"{suburb}: {count} properties")
 
     # Save the updated property data to a new JSON file
     with open('property_data.json', 'w') as file:
