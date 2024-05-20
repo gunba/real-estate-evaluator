@@ -44,9 +44,9 @@ feature_categories = {
 osm_feature_template = {}
 for feature_type, category in feature_categories.items():
     if category == 'nearest':
-        osm_feature_template[f'nearest_{feature_type}'] = float('inf')
+        osm_feature_template[f'osm_nearest_{feature_type}'] = float('inf')
     elif category == 'local':
-        osm_feature_template[f'local_{feature_type}'] = 0
+        osm_feature_template[f'osm_local_{feature_type}'] = 0
 
 # Load the property data from reiwa/reiwa_listings.json
 with open('reiwa/reiwa_listings.json', 'r') as file:
@@ -79,12 +79,12 @@ def haversine_distance(lon1, lat1, lon2, lat2):
 
 def process_property(property_data):
     # Check if the suburb exists in the suburb data
-    suburb = property_data['suburb']
+    suburb = property_data['reiwa_suburb']
     if suburb not in suburb_data:
         return None
 
-    property_lon = property_data['longitude']
-    property_lat = property_data['latitude']
+    property_lon = property_data['reiwa_longitude']
+    property_lat = property_data['reiwa_latitude']
 
     # Calculate the local community population and dwelling count
     local_community_population = 0
@@ -97,8 +97,8 @@ def process_property(property_data):
             local_community_population += feature['properties']['Population']
             local_community_dwellings += feature['properties']['Dwelling']
 
-    property_data['local_community_population'] = local_community_population
-    property_data['local_community_dwellings'] = local_community_dwellings
+    property_data['osm_local_community_population'] = local_community_population
+    property_data['osm_local_community_dwellings'] = local_community_dwellings
 
     # Calculate haversine distances for each OSM node feature and store them in osm_node_indices
     osm_node_indices = []
@@ -123,20 +123,20 @@ def process_property(property_data):
 
         for feature_type, category in feature_categories.items():
             if feature_type in properties:
-                if category == 'nearest' and distance < osm_features[f'nearest_{feature_type}']:
-                    osm_features[f'nearest_{feature_type}'] = distance
+                if category == 'nearest' and distance < osm_features[f'osm_nearest_{feature_type}']:
+                    osm_features[f'osm_nearest_{feature_type}'] = distance
                     break
                 elif category == 'local' and distance <= LOCAL_COMMUNITY_RADIUS:
-                    osm_features[f'local_{feature_type}'] += 1
+                    osm_features[f'osm_local_{feature_type}'] += 1
 
-        all_nearest_found = all(value != float('inf') for key, value in osm_features.items() if key.startswith('nearest_'))
+        all_nearest_found = all(value != float('inf') for key, value in osm_features.items() if key.startswith('osm_nearest_'))
 
         if all_nearest_found and distance > LOCAL_COMMUNITY_RADIUS:
             break
 
     # Calculate distances to Perth CBD and airport
-    property_data['distance_to_perth_cbd'] = haversine_distance(property_lon, property_lat, PERTH_CBD_COORDS[0], PERTH_CBD_COORDS[1])
-    property_data['distance_to_perth_airport'] = haversine_distance(property_lon, property_lat, PERTH_AIRPORT_COORDS[0], PERTH_AIRPORT_COORDS[1])
+    property_data['osm_distance_to_perth_cbd'] = haversine_distance(property_lon, property_lat, PERTH_CBD_COORDS[0], PERTH_CBD_COORDS[1])
+    property_data['osm_distance_to_perth_airport'] = haversine_distance(property_lon, property_lat, PERTH_AIRPORT_COORDS[0], PERTH_AIRPORT_COORDS[1])
 
     # Merge the OSM feature data into the property data
     property_data.update(osm_features)
@@ -150,10 +150,20 @@ if __name__ == '__main__':
     # Process properties using multiprocessing and measure execution time
     start_time = time.time()
 
+    # Track unique reiwa_listing_id values
+    unique_listing_ids = set()
+    unique_property_data_list = []
+
+    for property_data in property_data_list:
+        reiwa_listing_id = property_data['reiwa_listing_id']
+        if reiwa_listing_id not in unique_listing_ids:
+            unique_listing_ids.add(reiwa_listing_id)
+            unique_property_data_list.append(property_data)
+
     with Pool() as pool:
         results = []
-        with tqdm(total=len(property_data_list), unit='property', desc='Processing properties') as pbar:
-            for i, _ in enumerate(pool.imap_unordered(process_property, property_data_list), start=1):
+        with tqdm(total=len(unique_property_data_list), unit='property', desc='Processing properties') as pbar:
+            for i, _ in enumerate(pool.imap_unordered(process_property, unique_property_data_list), start=1):
                 results.append(_)
                 pbar.update()
 
@@ -162,7 +172,7 @@ if __name__ == '__main__':
     end_time = time.time()
     execution_time = end_time - start_time
 
-    print(f"\nProcessed {len(property_data_list)} properties in {execution_time:.2f} seconds.")
+    print(f"\nProcessed {len(unique_property_data_list)} properties in {execution_time:.2f} seconds.")
 
     # Save the updated property data to a new JSON file
     with open('property_data.json', 'w') as file:

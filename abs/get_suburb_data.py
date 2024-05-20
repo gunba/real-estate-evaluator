@@ -5,19 +5,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Map for converting text headers to meaningful variable names
 header_map = {
-    "People": "people",
-    "Male": "male_ratio",
-    "Female": "female_ratio",
-    "Median age": "median_age",
-    "Families": "families",
-    "for families with children": "child_per_family",
-    "for all households (a)": "child_per_household",
-    "All private dwellings": "houses",
-    "Average number of people per household": "people_per_household",
-    "Median weekly household income": "median_weekly_household_income",
-    "Median monthly mortgage repayments": "median_monthly_mortgage_repayment",
-    "Median weekly rent (b)": "median_weekly_rent",
-    "Average number of motor vehicles per dwelling": "avg_vehicles_per_house"
+    "People": "abs_people",
+    "Male": "abs_male_ratio",
+    "Female": "abs_female_ratio",
+    "Median age": "abs_median_age",
+    "Families": "abs_families",
+    "for families with children": "abs_child_per_family",
+    "for all households (a)": "abs_child_per_household",
+    "All private dwellings": "abs_houses",
+    "Average number of people per household": "abs_people_per_household",
+    "Median weekly household income": "abs_median_weekly_household_income",
+    "Median monthly mortgage repayments": "abs_median_monthly_mortgage_repayment",
+    "Median weekly rent (b)": "abs_median_weekly_rent",
+    "Average number of motor vehicles per dwelling": "abs_avg_vehicles_per_house"
 }
 
 def log_and_print(message):
@@ -52,8 +52,8 @@ def process_suburb(suburb):
 
         # Extract the data from the summary tables
         summary_data = {            
-            'scc_code': scc_code,
-            'scc_name': scc_name
+            'abs_scc_code': scc_code,
+            'abs_scc_name': scc_name
         }
 
         for table in summary_tables:
@@ -115,7 +115,7 @@ with open('extraction_log.txt', 'w') as log_file:
         for future in as_completed(futures):
             result = future.result()
             if result is not None:
-                extracted_data[result["scc_name"]] = result
+                extracted_data[result["abs_scc_name"]] = result
 
     # Save the extracted data to a new JSON file
     with open('extracted_data.json', 'w') as file:

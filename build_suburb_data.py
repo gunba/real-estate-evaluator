@@ -1,68 +1,60 @@
 import json
 import datetime
 import os
+import re
 
-# Load the crime data from wapol/crime_data_processed.json
-with open('wapol/crime_data_processed.json', 'r') as file:
-    crime_data = json.load(file)
+import requests
+from bs4 import BeautifulSoup
+import json
+from multiprocessing.pool import ThreadPool
 
-# Load the census data from abs/extracted_data.json
-with open('abs/extracted_data.json', 'r') as file:
-    census_data = json.load(file)
+def get_reiwa_suburb(suburb_name_raw):
+    suburb_name = suburb_name_raw.lower().replace(" ", "-")
 
-# Get the current financial year
-current_year = datetime.datetime.now().year
-current_month = datetime.datetime.now().month
-if current_month < 7:
-    current_fy = f"{current_year - 1}-{str(current_year)[-2:]}"
-    previous_fy = f"{current_year - 2}-{str(current_year - 1)[-2:]}"
-else:
-    current_fy = f"{current_year}-{str(current_year + 1)[-2:]}"
-    previous_fy = f"{current_year - 1}-{str(current_year)[-2:]}"
+    print(suburb_name)
+    
+    url = f"https://reiwa.com.au/suburb/{suburb_name}/"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-# Get the number of days elapsed in the current financial year
-current_date = datetime.datetime.now()
-start_date = datetime.datetime(current_year - 1, 7, 1) if current_month < 7 else datetime.datetime(current_year, 7, 1)
-days_elapsed = (current_date - start_date).days
-scaling_factor = 365 / days_elapsed
+    data = {}
 
-# Define the crime type mapping
-crime_type_mapping = {
-    'Homicide': 'offences_homicide',
-    'Sexual Offences': 'offences_sexual',
-    'Assault (Family)': 'offences_assault_family',
-    'Assault (Non-Family)': 'offences_assault_non_family',
-    'Threatening Behaviour (Family)': 'offences_threatening_behaviour_family',
-    'Threatening Behaviour (Non-Family)': 'offences_threatening_behaviour_non_family',
-    'Deprivation of Liberty': 'offences_deprivation_of_liberty',
-    'Robbery': 'offences_robbery',
-    'Dwelling Burglary': 'offences_dwelling_burglary',
-    'Non-Dwelling Burglary': 'offences_non_dwelling_burglary',
-    'Stealing of Motor Vehicle': 'offences_stealing_motor_vehicle',
-    'Stealing': 'offences_stealing',
-    'Property Damage': 'offences_property_damage',
-    'Arson': 'offences_arson',
-    'Drug Offences': 'offences_drug',
-    'Graffiti': 'offences_graffiti',
-    'Fraud & Related Offences': 'offences_fraud',
-    'Breach of Violence Restraint Order': 'offences_breach_vro'
-}
+    # Local Government
+    data["reiwa_local_government"] = soup.select("p.text-reset.u-flex-grow.u-text-right-l")[2].text.strip()
 
-# Define the crime categories
-crime_categories = {
-    'ap': ['offences_non_dwelling_burglary', 'offences_property_damage', 'offences_stealing_motor_vehicle', 'offences_arson', 'offences_dwelling_burglary'],
-    'apn': ['offences_homicide', 'offences_assault_non_family', 'offences_deprivation_of_liberty', 'offences_sexual', 'offences_threatening_behaviour_family', 'offences_robbery', 'offences_assault_family', 'offences_threatening_behaviour_non_family']
-}
+    # Sales Growth
+    sales_growth_element = soup.select(".o-stat-box.-aqua strong.o-stat-box__value")
+    if sales_growth_element:
+        sales_growth_text = sales_growth_element[0].text.strip()
+        data["reiwa_sales_growth"] = float(sales_growth_text.replace("%", ""))
+    else:
+        data["reiwa_sales_growth"] = 0.0
 
-# Initialize the aggregated suburb data
-aggregated_suburb_data = {}
+    median_sales_price_element = soup.select(".o-stat-box.-aqua strong.o-stat-box__value")
+    if len(median_sales_price_element) > 1:
+        median_sales_price_text = median_sales_price_element[1].text.strip()
+        median_sales_price_value = re.sub(r'[^\d.]', '', median_sales_price_text)
+        if 'm' in median_sales_price_text.lower():
+            data["reiwa_median_house_sale"] = int(float(median_sales_price_value) * 1000000)
+        else:
+            data["reiwa_median_house_sale"] = int(float(median_sales_price_value) * 1000)
+    else:
+        data["reiwa_median_house_sale"] = 0
+    
+    # Suburb Interest Level
+    interest_level_element = soup.select_one("div[data-react-type='Insights/Suburb/InterestLevels']")
+    interest_level_props = json.loads(interest_level_element["data-props"].replace("&quot;", "\""))
+    data["reiwa_suburb_interest_level"] = interest_level_props["interestLevel"]
 
-# Iterate over the suburbs in the crime data
-for suburb, data in crime_data.items():
+    return data
+
+def process_suburb(suburb):
+    crime_data = suburb[1]
+
     # Check if the suburb has data for the current and previous financial years
-    if current_fy in data and previous_fy in data:
-        current_data = data[current_fy]
-        previous_data = data[previous_fy]
+    if current_fy in crime_data and previous_fy in crime_data:
+        current_data = crime_data[current_fy]
+        previous_data = crime_data[previous_fy]
 
         # Create dictionaries to store the updated crime type keys for current and previous data
         updated_current_data = {}
@@ -92,32 +84,103 @@ for suburb, data in crime_data.items():
             for cat, crime_types in crime_categories.items()
         }
 
-        # Calculate the increase in crime rate for each category
-        crime_rate_inc = {
-            cat: (
-                (current_cat_crime[cat] - previous_cat_crime[cat]) / previous_cat_crime[cat]
-                if previous_cat_crime[cat] != 0
-                else 0
-            )
-            for cat in crime_categories
-        }
-
         # Find the matching suburb in the census data (case-insensitive)
         matching_suburb = next(
-            (suburb_data for suburb_name, suburb_data in census_data.items() if suburb_name.lower() == suburb.lower()),
+            (suburb_data for suburb_name, suburb_data in census_data.items() if suburb_name.lower() == suburb[0].lower()),
             None
         )
 
         if matching_suburb:
-            # Combine the crime data and census data for the suburb
-            aggregated_suburb_data[matching_suburb['scc_name']] = {
+            # Get the REIWA suburb data
+            try:
+                reiwa_suburb_data = get_reiwa_suburb(matching_suburb['abs_scc_name'])
+            except Exception as e:
+                print(f"Error occurred for suburb {matching_suburb['abs_scc_name']}:", e)
+                return None
+                    
+            # Combine the crime data, census data, and REIWA suburb data for the suburb
+            return (matching_suburb['abs_scc_name'], {
                 **updated_current_data,
-                'ap_crime': current_cat_crime['ap'],
-                'apn_crime': current_cat_crime['apn'],
-                'ap_crime_inc': crime_rate_inc['ap'],
-                'apn_crime_inc': crime_rate_inc['apn'],
-                **{k: v for k, v in matching_suburb.items() if k not in ['scc_code', 'scc_name']}
-            }
+                'wapol_total_person_crime': current_cat_crime['ap'],
+                'wapol_total_property_crime': current_cat_crime['apn'],
+                'wapol_avg_person_crime_prev_3y': previous_cat_crime['ap'],
+                'wapol_avg_property_crime_prev_3y': previous_cat_crime['apn'],
+                **{k: v for k, v in matching_suburb.items() if k not in ['abs_scc_code', 'abs_scc_name']},
+                **reiwa_suburb_data
+            })
+
+    return None
+
+# Load the crime data from wapol/crime_data_processed.json
+with open('wapol/crime_data_processed.json', 'r') as file:
+    crime_data = json.load(file)
+
+# Load the census data from abs/extracted_data.json
+with open('abs/extracted_data.json', 'r') as file:
+    census_data = json.load(file)
+
+# Get the current financial year
+current_year = datetime.datetime.now().year
+current_month = datetime.datetime.now().month
+if current_month < 7:
+    current_fy = f"{current_year - 1}-{str(current_year)[-2:]}"
+    previous_fy = f"{current_year - 2}-{str(current_year - 1)[-2:]}"
+else:
+    current_fy = f"{current_year}-{str(current_year + 1)[-2:]}"
+    previous_fy = f"{current_year - 1}-{str(current_year)[-2:]}"
+
+# Get the number of days elapsed in the current financial year
+current_date = datetime.datetime.now()
+start_date = datetime.datetime(current_year - 1, 7, 1) if current_month < 7 else datetime.datetime(current_year, 7, 1)
+days_elapsed = (current_date - start_date).days
+scaling_factor = 365 / days_elapsed
+
+# Define the crime type mapping
+crime_type_mapping = {
+    'Homicide': 'wapol_offences_homicide',
+    'Sexual Offences': 'wapol_offences_sexual',
+    'Assault (Family)': 'wapol_offences_assault_family',
+    'Assault (Non-Family)': 'wapol_offences_assault_non_family',
+    'Threatening Behaviour (Family)': 'wapol_offences_threatening_behaviour_family',
+    'Threatening Behaviour (Non-Family)': 'wapol_offences_threatening_behaviour_non_family',
+    'Deprivation of Liberty': 'wapol_offences_deprivation_of_liberty',
+    'Robbery': 'wapol_offences_robbery',
+    'Dwelling Burglary': 'wapol_offences_dwelling_burglary',
+    'Non-Dwelling Burglary': 'wapol_offences_non_dwelling_burglary',
+    'Stealing of Motor Vehicle': 'wapol_offences_stealing_motor_vehicle',
+    'Stealing': 'wapol_offences_stealing',
+    'Property Damage': 'wapol_offences_property_damage',
+    'Arson': 'wapol_offences_arson',
+    'Drug Offences': 'wapol_offences_drug',
+    'Graffiti': 'wapol_offences_graffiti',
+    'Fraud & Related Offences': 'wapol_offences_fraud',
+    'Breach of Violence Restraint Order': 'wapol_offences_breach_vro'
+}
+
+# Define the crime categories
+crime_categories = {
+    'ap': ['wapol_offences_non_dwelling_burglary', 'wapol_offences_property_damage', 'wapol_offences_stealing_motor_vehicle', 'wapol_offences_arson', 'wapol_offences_dwelling_burglary'],
+    'apn': ['wapol_offences_homicide', 'wapol_offences_assault_non_family', 'wapol_offences_deprivation_of_liberty', 'wapol_offences_sexual', 'wapol_offences_threatening_behaviour_family', 'wapol_offences_robbery', 'wapol_offences_assault_family', 'wapol_offences_threatening_behaviour_non_family']
+}
+
+# Initialize the aggregated suburb data
+aggregated_suburb_data = {}
+
+# Create a thread pool
+pool = ThreadPool()
+
+# Process the suburbs in parallel
+results = pool.map(process_suburb, crime_data.items())
+
+# Close the thread pool
+pool.close()
+pool.join()
+
+# Filter out None results and add valid results to the aggregated suburb data
+for result in results:
+    if result is not None:
+        suburb, data = result
+        aggregated_suburb_data[suburb] = data
 
 # Save the aggregated suburb data to a new JSON file
 with open('suburb_data.json', 'w') as file:

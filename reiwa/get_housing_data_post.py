@@ -2,9 +2,56 @@ import requests
 import json
 import time
 from multiprocessing import Pool, Manager
+import re
 
 base_url = "https://reiwa.com.au/api/search/listing"
 output_file = "reiwa_listings.json"
+
+# Helper function to process prices from free-text input to int
+def process_price(price):
+    # Clean up the price string
+    price = price.replace(',', '').lower()
+
+    # Extract numbers
+    numbers = re.findall(r'[\d.]+', price)
+    if not numbers or len(numbers) == 0:
+        return None
+
+    try:
+        # Convert extracted numbers to integers
+        base_price = float(numbers[0])
+
+        # Determine the base price
+        if 1 <= base_price <= 2:
+            base_price *= 1_000_000  # Treat 1 or 2 as millions
+        elif 100 <= base_price < 1000:
+            base_price *= 1_000  # Treat 100-999 as thousands
+        elif base_price >= 1000:
+            base_price = base_price  # Treat 1000 and above as is
+
+        # Handle phrases like "low millions", "mid 600ks", "high 2 millions"
+        match = re.search(r'\b(low|mid|high)\b', price)
+
+        if match:
+            modifier = match.group(1)
+            if base_price >= 1000000:
+                if modifier == 'low':
+                    base_price += 250000
+                elif modifier == 'mid':
+                    base_price += 500000
+                elif modifier == 'high':
+                    base_price += 750000
+            else:
+                if modifier == 'low':
+                    base_price += 25000
+                elif modifier == 'mid':
+                    base_price += 50000
+                elif modifier == 'high':
+                    base_price += 75000
+        return base_price
+    except Exception as e:
+        print(e)
+        return 0
 
 def mine_listings(args):
     params, is_sold, min_price, max_price, listings = args
@@ -40,23 +87,25 @@ def mine_listings(args):
 
             for result in results:
                 listing = {
-                    "address": result["Address"],
-                    "price": (params["SearchCriteria"]["MinPrice"] + params["SearchCriteria"]["MaxPrice"]) // 2,
-                    "landsize": result.get("LandArea", 0),
-                    "latitude": result['Latitude'],
-                    "longitude": result['Longitude'],
-                    "bedrooms": result.get("Bedrooms", 0),
-                    "bathrooms": result.get("Bathrooms", 0),
-                    "parking": result.get("Carspaces", 0),
-                    "house_type": result["PropertyType"],
-                    "image_url": result["ListingImageUrls"][0] if result["ListingImageUrls"] else None,
-                    "details_url": result["PropertyDetailsURL"],
-                    "is_sold": is_sold,
-                    "floor_plan_count": result.get("FloorPlanCount", 0),
-                    "agency_name": result.get("AgencyName", ""),
-                    "agency_no": result.get("AgencyNo", ""),
-                    "pets_allowed": result.get("PetsAllowed", False),
-                    "suburb": result.get("Suburb", "")
+                    "reiwa_address": result["Address"],
+                    "reiwa_price": (params["SearchCriteria"]["MinPrice"] + params["SearchCriteria"]["MaxPrice"]) // 2,
+                    "reiwa_landsize": result.get("LandArea", 0),
+                    "reiwa_latitude": result['Latitude'],
+                    "reiwa_longitude": result['Longitude'],
+                    "reiwa_bedrooms": result.get("Bedrooms", 0),
+                    "reiwa_bathrooms": result.get("Bathrooms", 0),
+                    "reiwa_parking": result.get("Carspaces", 0),
+                    "reiwa_house_type": result["PropertyType"],
+                    "reiwa_image_url": result["ListingImageUrls"][0] if result["ListingImageUrls"] else None,
+                    "reiwa_details_url": result["PropertyDetailsURL"],
+                    "reiwa_is_sold": is_sold,
+                    "reiwa_floor_plan_count": result.get("FloorPlanCount", 0),
+                    "reiwa_agency_name": result.get("AgencyName", ""),
+                    "reiwa_agency_no": result.get("AgencyNo", ""),
+                    "reiwa_pets_allowed": result.get("PetsAllowed", False),
+                    "reiwa_suburb": result.get("Suburb", ""),
+                    "reiwa_listing_price": process_price(result.get("DisplayPrice", "0")),
+                    "reiwa_listing_id": result.get("ListingId", 0),
                 }
                 listings.append(listing)
 
@@ -108,7 +157,7 @@ def process_listings(is_sold):
 
     with Manager() as manager:
         listings = manager.list()
-        price_ranges = [(price, price + 10000) for price in range(0, 10000000, 10000)]
+        price_ranges = [(price, price + 9999) for price in range(0, 10000000, 10000)]
 
         with Pool() as pool:
             pool.map(mine_listings, [(initial_params, is_sold, min_price, max_price, listings) for min_price, max_price in price_ranges])
