@@ -3,6 +3,8 @@ import math
 import time
 from multiprocessing import Pool
 from tqdm import tqdm
+from difflib import get_close_matches
+
 
 # Constants
 PERTH_CBD_COORDS = (115.8617, -31.9514)
@@ -60,13 +62,46 @@ with open('mesh/aus_mesh_blocks_processed.geojson', 'r') as file:
 with open('osm/osm_nodes_processed.geojson', 'r') as file:
     osm_node_data = json.load(file)
 
-    # Load school data
-with open('school_data.json') as f:
-    scsa_school_data = json.load(f)
+# Load the student achievement data
+with open('scsa/processed_student_achievement_data.json') as f:
+    student_data = json.load(f)
 
-# Load the suburb data from suburb_data.json
-with open('suburb_data.json', 'r') as file:
-    suburb_data = json.load(file)
+def build_school_data():
+    """
+    Build school dataset that combines academic results with physical school coordinates
+    """
+    # Extract school features from geojson
+    schools = [feature for feature in osm_node_data['features'] if feature['properties'].get('primary_education') == 1]
+
+    # Function to find closest school name match
+    def find_closest_school(school_name, school_list):
+        school_names = [school['properties']['name'] for school in school_list]
+        # Ensure the school_name is a string
+        if isinstance(school_name, str):
+            closest_matches = get_close_matches(school_name, school_names, n=1, cutoff=0.6)
+            return closest_matches[0] if closest_matches else None
+        return None
+
+    # Combine data
+    combined_data = []
+
+    for student in student_data:
+        school_name = student['scsa_school']
+        closest_school_name = find_closest_school(school_name, schools)
+        if closest_school_name:
+            matching_school = next(school for school in schools if school['properties']['name'] == closest_school_name)
+            longitude, latitude = matching_school['geometry']['coordinates']
+            combined_entry = {
+                'school_name': school_name,
+                'longitude': longitude,
+                'latitude': latitude,
+                'achievement_data': student
+            }
+            combined_data.append(combined_entry)
+            
+    return combined_data
+
+scsa_school_data = build_school_data()
 
 def haversine_distance(lon1, lat1, lon2, lat2):
     """
@@ -84,8 +119,6 @@ def haversine_distance(lon1, lat1, lon2, lat2):
 def process_property(property_data):
     # Check if the suburb exists in the suburb data
     suburb = property_data['reiwa_suburb']
-    if suburb not in suburb_data:
-        return None
 
     property_lon = property_data['reiwa_longitude']
     property_lat = property_data['reiwa_latitude']
@@ -154,9 +187,6 @@ def process_property(property_data):
 
     # Merge the OSM feature data into the property data
     property_data.update(osm_features)
-
-    # Merge the suburb data into the property data
-    property_data.update(suburb_data[suburb])
 
     # Merge school data into property data
     property_data.update(closest_school["achievement_data"])

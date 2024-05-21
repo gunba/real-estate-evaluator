@@ -32,6 +32,10 @@ def clean_key(key):
     # Remove special characters and replace spaces with underscores
     key = re.sub(r'[^\w\s]', '', key)
     key = key.replace(' ', '_').lower()
+    # Remove trailing underscores
+    key = key.rstrip('_')
+    # Remove double underscores
+    key = key.replace('__', '_').lower()
     return key
 
 def clean_value(value):
@@ -73,19 +77,36 @@ def extract_table_view_data(tables_view, summary_data):
     tables = tables_view.find_all('table')
     for table in tables:
         # Process each row of the table
+        th = table.find_all('th')[0]
+
+        # Extract the main text directly inside the <th> element
+        main_text = ''.join([str(item) for item in th.contents if isinstance(item, str)]).strip()
+
+        # Clean the key as before
+        header_key = 'abs_sub_' + clean_key(main_text)
+
+        summary_data[header_key] = {
+            "pct": {}, 
+            "val": {}
+        }
+
         for row in table.find_all('tr')[1:]:  # Skip header row
             th = row.find('th', class_='firstCol')
-            td = row.find('td')
+            td = row.find_all('td')
             if th and td and 'rowMessage' not in th.get('class', []):  # Skip rows with 'firstCol rowMessage'
                 row_key = clean_key(th.get_text(strip=True))
-                row_key = 'abs_sub_' + row_key
-                value = td.get_text(strip=True)
-                
-                # Clean the value
-                value = clean_value(value)
-                
-                # Store the data in the flat dictionary
-                summary_data[row_key] = value
+                value = td[0].get_text(strip=True)
+
+                if row_key != "null":
+                    percent = td[1].get_text(strip=True)
+
+                    # Clean the value
+                    value = clean_value(value)
+                    percent = clean_value(percent)
+                    
+                    # Store the data in the flat dictionary
+                    summary_data[header_key]['val'][row_key] = value
+                    summary_data[header_key]['pct'][row_key] = percent/100
 
 def process_suburb(suburb):
     try:
@@ -135,13 +156,13 @@ def process_suburb(suburb):
 with open('georef-australia-state-suburb.json', 'r') as file:
     data = json.load(file)
 
-# Set the starting index for fault tolerance
+# Set the starting index for fault tolerance (start at 1600 for fast debugging)
 start_index = 0
 
 # Open the log file in write mode (overwrites previous log)
 with open('extraction_log.txt', 'w') as log_file:
     # Create a thread pool with a maximum of 10 worker threads
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor() as executor:
         # Submit the tasks to the thread pool
         futures = [executor.submit(process_suburb, suburb) for suburb in data[start_index:]]
 
