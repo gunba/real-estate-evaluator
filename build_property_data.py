@@ -60,6 +60,10 @@ with open('mesh/aus_mesh_blocks_processed.geojson', 'r') as file:
 with open('osm/osm_nodes_processed.geojson', 'r') as file:
     osm_node_data = json.load(file)
 
+    # Load school data
+with open('school_data.json') as f:
+    scsa_school_data = json.load(f)
+
 # Load the suburb data from suburb_data.json
 with open('suburb_data.json', 'r') as file:
     suburb_data = json.load(file)
@@ -85,6 +89,16 @@ def process_property(property_data):
 
     property_lon = property_data['reiwa_longitude']
     property_lat = property_data['reiwa_latitude']
+
+    min_distance = float('inf')
+    closest_school = None
+    for school in scsa_school_data:
+        school_lon = school['longitude']
+        school_lat = school['latitude']
+        distance = haversine_distance(property_lon, property_lat, school_lon, school_lat)
+        if distance < min_distance:
+            min_distance = distance
+            closest_school = school
 
     # Calculate the local community population and dwelling count
     local_community_population = 0
@@ -144,6 +158,8 @@ def process_property(property_data):
     # Merge the suburb data into the property data
     property_data.update(suburb_data[suburb])
 
+    # Merge school data into property data
+    property_data.update(closest_school["achievement_data"])
     return property_data
 
 if __name__ == '__main__':

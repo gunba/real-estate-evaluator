@@ -2,51 +2,7 @@ import json
 import datetime
 import os
 import re
-
-import requests
-from bs4 import BeautifulSoup
-import json
 from multiprocessing.pool import ThreadPool
-
-def get_reiwa_suburb(suburb_name_raw):
-    suburb_name = suburb_name_raw.lower().replace(" ", "-")
-
-    print(suburb_name)
-    
-    url = f"https://reiwa.com.au/suburb/{suburb_name}/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    data = {}
-
-    # Local Government
-    data["reiwa_local_government"] = soup.select("p.text-reset.u-flex-grow.u-text-right-l")[2].text.strip()
-
-    # Sales Growth
-    sales_growth_element = soup.select(".o-stat-box.-aqua strong.o-stat-box__value")
-    if sales_growth_element:
-        sales_growth_text = sales_growth_element[0].text.strip()
-        data["reiwa_sales_growth"] = float(sales_growth_text.replace("%", ""))
-    else:
-        data["reiwa_sales_growth"] = 0.0
-
-    median_sales_price_element = soup.select(".o-stat-box.-aqua strong.o-stat-box__value")
-    if len(median_sales_price_element) > 1:
-        median_sales_price_text = median_sales_price_element[1].text.strip()
-        median_sales_price_value = re.sub(r'[^\d.]', '', median_sales_price_text)
-        if 'm' in median_sales_price_text.lower():
-            data["reiwa_median_house_sale"] = int(float(median_sales_price_value) * 1000000)
-        else:
-            data["reiwa_median_house_sale"] = int(float(median_sales_price_value) * 1000)
-    else:
-        data["reiwa_median_house_sale"] = 0
-    
-    # Suburb Interest Level
-    interest_level_element = soup.select_one("div[data-react-type='Insights/Suburb/InterestLevels']")
-    interest_level_props = json.loads(interest_level_element["data-props"].replace("&quot;", "\""))
-    data["reiwa_suburb_interest_level"] = interest_level_props["interestLevel"]
-
-    return data
 
 def process_suburb(suburb):
     crime_data = suburb[1]
@@ -92,12 +48,8 @@ def process_suburb(suburb):
 
         if matching_suburb:
             # Get the REIWA suburb data
-            try:
-                reiwa_suburb_data = get_reiwa_suburb(matching_suburb['abs_scc_name'])
-            except Exception as e:
-                print(f"Error occurred for suburb {matching_suburb['abs_scc_name']}:", e)
-                return None
-                    
+            reiwa_suburb_data = reiwa_housing_data.get(matching_suburb['abs_scc_name'], {})
+
             # Combine the crime data, census data, and REIWA suburb data for the suburb
             return (matching_suburb['abs_scc_name'], {
                 **updated_current_data,
@@ -118,6 +70,10 @@ with open('wapol/crime_data_processed.json', 'r') as file:
 # Load the census data from abs/extracted_data.json
 with open('abs/extracted_data.json', 'r') as file:
     census_data = json.load(file)
+
+# Load the REIWA housing data from reiwa/reiwa_housing_data.json
+with open('reiwa/reiwa_housing_data.json', 'r') as file:
+    reiwa_housing_data = json.load(file)
 
 # Get the current financial year
 current_year = datetime.datetime.now().year

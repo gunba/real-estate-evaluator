@@ -2,6 +2,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
 # Map for converting text headers to meaningful variable names
 header_map = {
@@ -24,6 +25,68 @@ def log_and_print(message):
     log_file.write(message + "\n")
     print(message)
 
+def clean_key(key):
+    # Remove brackets and content inside
+    key = re.sub(r'\[.*?\]', '', key)
+    key = re.sub(r'\(.*?\)', '', key)
+    # Remove special characters and replace spaces with underscores
+    key = re.sub(r'[^\w\s]', '', key)
+    key = key.replace(' ', '_').lower()
+    return key
+
+def clean_value(value):
+    # Remove commas, hyphens, and replace '_-_'
+    value = value.replace(',', '').replace('-', '').replace('_-_', '')
+    # Convert to appropriate type or replace with 0 if not numeric
+    if value.endswith('%'):
+        value = float(value[:-1]) / 100
+    elif value.isdigit():
+        value = int(value)
+    elif value.replace('.', '', 1).isdigit():
+        value = float(value)
+    else:
+        value = 0
+    return value
+
+def extract_summary_data(summary_container, summary_data):
+    summary_tables = summary_container.find_all('table', class_='summaryTable')
+    for table in summary_tables:
+        for row in table.find_all('tr'):
+            th = row.find('th')
+            td = row.find('td')
+            if th and td:
+                key = th.get_text(strip=True)
+                value = td.get_text(strip=True)
+
+                # Remove dollar signs and commas from values
+                value = value.replace('$', '').replace(',', '')
+
+                # ABS likes to use th+td with no value for headers
+                if value == "null":
+                    continue
+
+                # Map headers to normal variable names
+                if key in header_map:
+                    summary_data[header_map[key]] = clean_value(value)
+
+def extract_table_view_data(tables_view, summary_data):
+    tables = tables_view.find_all('table')
+    for table in tables:
+        # Process each row of the table
+        for row in table.find_all('tr')[1:]:  # Skip header row
+            th = row.find('th', class_='firstCol')
+            td = row.find('td')
+            if th and td and 'rowMessage' not in th.get('class', []):  # Skip rows with 'firstCol rowMessage'
+                row_key = clean_key(th.get_text(strip=True))
+                row_key = 'abs_sub_' + row_key
+                value = td.get_text(strip=True)
+                
+                # Clean the value
+                value = clean_value(value)
+                
+                # Store the data in the flat dictionary
+                summary_data[row_key] = value
+
 def process_suburb(suburb):
     try:
         scc_code = suburb['scc_code'][0]
@@ -43,47 +106,21 @@ def process_suburb(suburb):
 
         # Find the summary container div
         summary_container = soup.find('div', id='summary-container')
+        tables_view = soup.find('div', id='tablesView')
 
-        # Check if summary tables exist
-        summary_tables = summary_container.find_all('table', class_='summaryTable')
-        if not summary_tables:
+        if not summary_container or not tables_view:
             log_and_print(f"Skipping suburb: {scc_name} (Insufficient data)")
             return None
 
         # Extract the data from the summary tables
-        summary_data = {            
+        summary_data = {
             'abs_scc_code': scc_code,
             'abs_scc_name': scc_name
         }
+        extract_summary_data(summary_container, summary_data)
 
-        for table in summary_tables:
-            for row in table.find_all('tr'):
-                th = row.find('th')
-                td = row.find('td')
-                if th and td:
-                    key = th.get_text(strip=True)
-                    value = td.get_text(strip=True)
-
-                    # Remove dollar signs and commas from values
-                    value = value.replace('$', '').replace(',', '')
-
-                    # ABS likes to use th+td with no value for headers
-                    if value == "null":
-                        continue
-                    # Convert percentages to floats
-                    elif value.endswith('%'):
-                        value = float(value[:-1]) / 100
-                    # Check if only digits -> int
-                    elif value.isdigit():
-                        value = int(value)
-                    # Otherwise, if period -> float
-                    elif value.find('.')!=-1:
-                        value = float(value)
-
-                    # Map headers to normal variable names
-                    summary_data[
-                        header_map[key]
-                    ] = value
+        # Extract the data from the tables view
+        extract_table_view_data(tables_view, summary_data)
 
         log_and_print(f"Processed suburb: {scc_name}\n{json.dumps(summary_data, indent=2)}")
 

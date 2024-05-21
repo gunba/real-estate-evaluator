@@ -6,7 +6,7 @@ def simplify_geojson(geojson_data):
     for feature in geojson_data["features"]:
         properties = feature["properties"]
         geometry = feature["geometry"]
-        simplified_properties = {}
+        simplified_properties = {"name": properties.get("name", "")}
         
         for key, value in properties.items():
             if key == "amenity":
