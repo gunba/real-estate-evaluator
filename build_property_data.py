@@ -30,6 +30,7 @@ feature_categories = {
     'administrative_building': 'nearest',
     'financial_services': 'nearest',
     'religious_building': 'nearest',
+    'coast': 'nearest',
     'dining': 'local',
     'shop': 'local',
     'waste_facility': 'local',

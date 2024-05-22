@@ -3,6 +3,7 @@ amenity,parking: 6559
 bus,yes: 6461
 public_transport,platform: 6431
 network,Transperth: 5503
+coast,1: 4627
 leisure,pitch: 4422
 leisure,park: 4337
 leisure,swimming_pool: 4236

@@ -9,7 +9,9 @@ def simplify_geojson(geojson_data):
         simplified_properties = {"name": properties.get("name", "")}
         
         for key, value in properties.items():
-            if key == "amenity":
+            if key == "coast" and value == 1:
+                simplified_properties["coast"] = 1
+            elif key == "amenity":
                 if value in ["cafe", "fast_food", "restaurant", "pub", "bar", "biergarten", "food_court", "ice_cream"]:
                     simplified_properties["dining"] = 1
                 elif value in ["parking", "parking_entrance", "parking_space", "motorcycle_parking", "bicycle_parking"]:
@@ -105,10 +107,65 @@ def average_bounding_box(coordinates):
     centroid_y = y_sum / (6 * area)
     return [centroid_x, centroid_y]
 
+# Process coast geojson and add coast property to each feature
+def add_coast_property(coast_geojson_data):
+    new_features = []
+    
+    for feature in coast_geojson_data['features']:
+        if feature['geometry']['type'] == 'Polygon':
+            for polygon in feature['geometry']['coordinates']:
+                for coord in polygon:
+                    new_feature = {
+                        'type': 'Feature',
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': coord
+                        },
+                        'properties': {'coast': 1}
+                    }
+                    new_features.append(new_feature)
+                    
+        elif feature['geometry']['type'] == 'MultiPolygon':
+            for multipolygon in feature['geometry']['coordinates']:
+                for polygon in multipolygon:
+                    for coord in polygon:
+                        new_feature = {
+                            'type': 'Feature',
+                            'geometry': {
+                                'type': 'Point',
+                                'coordinates': coord
+                            },
+                            'properties': {'coast': 1}
+                        }
+                        new_features.append(new_feature)
+                        
+        elif feature['geometry']['type'] == 'LineString':
+            for coord in feature['geometry']['coordinates']:
+                new_feature = {
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': coord
+                    },
+                    'properties': {'coast': 1}
+                }
+                new_features.append(new_feature)
+    
+    coast_geojson_data['features'] = new_features
+    return coast_geojson_data
+
 # Convert full OSM data into streamlined data for regression
-def process_geojson_data(file_path):
-    with open(file_path, 'r', errors="ignore") as file:
-        geojson_data = json.load(file)
+def process_geojson_data(main_file_path, coast_file_path):
+    with open(main_file_path, 'r', errors="ignore") as main_file:
+        geojson_data = json.load(main_file)
+
+    with open(coast_file_path, 'r', errors="ignore") as coast_file:
+        coast_geojson_data = json.load(coast_file)
+
+    coast_geojson_data = add_coast_property(coast_geojson_data)
+    
+    # Append coast features to main geojson features
+    geojson_data['features'].extend(coast_geojson_data['features'])
 
     property_combinations = {}
 
@@ -155,5 +212,6 @@ def process_geojson_data(file_path):
         json.dump(geojson_data, file, indent=2)
 
 if __name__ == '__main__':
-    file_path = 'osm_nodes.geojson'
-    process_geojson_data(file_path)
+    main_file_path = 'osm_nodes.geojson'
+    coast_file_path = 'osm_coast.geojson'
+    process_geojson_data(main_file_path, coast_file_path)
