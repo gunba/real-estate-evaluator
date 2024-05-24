@@ -1,6 +1,11 @@
 import json
 import datetime
 from multiprocessing.pool import ThreadPool
+from geopy.distance import geodesic
+
+# Constants
+CBD_COORDINATES = (-31.953512, 115.857048)
+MAX_DISTANCE_KM = 100
 
 def process_suburb(suburb):
     crime_data = suburb[1]
@@ -10,21 +15,19 @@ def process_suburb(suburb):
         current_data = crime_data[current_fy]
         previous_data = crime_data[previous_fy]
 
-        # Create dictionaries to store the updated crime type keys for current and previous data
-        updated_current_data = {}
-        updated_previous_data = {}
-
         # Scale up the crime numbers for the current year and update the keys
-        for crime_type, count in current_data.items():
-            if crime_type not in ['Locality', 'FinancialYear']:
-                updated_key = crime_type_mapping[crime_type]
-                updated_current_data[updated_key] = int(count * scaling_factor)
+        updated_current_data = {
+            crime_type_mapping[crime_type]: int(count * scaling_factor)
+            for crime_type, count in current_data.items()
+            if crime_type not in ['Locality', 'FinancialYear']
+        }
 
         # Update the keys for the previous year data
-        for crime_type, count in previous_data.items():
-            if crime_type not in ['Locality', 'FinancialYear']:
-                updated_key = crime_type_mapping[crime_type]
-                updated_previous_data[updated_key] = count
+        updated_previous_data = {
+            crime_type_mapping[crime_type]: count
+            for crime_type, count in previous_data.items()
+            if crime_type not in ['Locality', 'FinancialYear']
+        }
 
         # Calculate the categorical crime numbers for the current year
         current_cat_crime = {
@@ -38,6 +41,14 @@ def process_suburb(suburb):
             for cat, crime_types in crime_categories.items()
         }
 
+        # Add wapol variables to updated_current_data
+        updated_current_data.update({
+            'wapol_total_person_crime': current_cat_crime['ap'],
+            'wapol_total_property_crime': current_cat_crime['apn'],
+            'wapol_avg_person_crime_prev_3y': previous_cat_crime['ap'],
+            'wapol_avg_property_crime_prev_3y': previous_cat_crime['apn']
+        })
+
         # Find the matching suburb in the census data (case-insensitive)
         matching_suburb = next(
             (suburb_data for suburb_name, suburb_data in census_data.items() if suburb_name.lower() == suburb[0].lower()),
@@ -49,27 +60,20 @@ def process_suburb(suburb):
             reiwa_suburb_data = reiwa_housing_data.get(matching_suburb['abs_scc_name'], {})
 
             if reiwa_suburb_data and 'reiwa_suburb_interest_level' in reiwa_suburb_data and reiwa_suburb_data['reiwa_suburb_interest_level'] is not None:
-                # Combine the crime data, census data, and REIWA suburb data for the suburb
+                # Combine the data for the suburb
                 combined_data = {
                     **updated_current_data,
-                    'wapol_total_person_crime': current_cat_crime['ap'],
-                    'wapol_total_property_crime': current_cat_crime['apn'],
-                    'wapol_avg_person_crime_prev_3y': previous_cat_crime['ap'],
-                    'wapol_avg_property_crime_prev_3y': previous_cat_crime['apn'],
                     **{k: v for k, v in matching_suburb.items() if k not in ['abs_scc_code', 'abs_scc_name']},
                     **reiwa_suburb_data
                 }
 
-                # Find the coordinates for the suburb
-                coordinates = next(
-                    (feature['geometry']['coordinates'] for feature in osm_suburbs['features'] if feature['properties']['name'].lower() == suburb[0].lower()),
-                    None
-                )
+                # Find the coordinates for the suburb (invert coordinates for geopy)
+                coordinates = matching_suburb['abs_coordinates'][0][0]
+                coordinates = (coordinates[1], coordinates[0])  # Invert to (latitude, longitude)
+                distance_to_cbd = geodesic(coordinates, CBD_COORDINATES).kilometers
 
-                if coordinates:
-                    combined_data['coordinates'] = coordinates
-
-                return matching_suburb['abs_scc_name'], combined_data
+                if distance_to_cbd <= MAX_DISTANCE_KM:
+                    return matching_suburb['abs_scc_name'], combined_data
 
     return None
 
@@ -77,17 +81,13 @@ def process_suburb(suburb):
 with open('wapol/crime_data_processed.json', 'r') as file:
     crime_data = json.load(file)
 
-# Load the census data from abs/extracted_data.json
-with open('abs/extracted_data.json', 'r') as file:
+# Load the census data from abs/census_data_processed.json
+with open('abs/census_data_processed.json', 'r') as file:
     census_data = json.load(file)
 
 # Load the REIWA housing data from reiwa/reiwa_housing_data.json
 with open('reiwa/reiwa_housing_data.json', 'r') as file:
     reiwa_housing_data = json.load(file)
-
-# Load the OSM suburbs data from osm_suburbs.geojson
-with open('osm/osm_suburbs_processed.geojson', 'r', encoding='utf-8') as file:
-    osm_suburbs = json.load(file)
 
 # Get the current financial year
 current_year = datetime.datetime.now().year
