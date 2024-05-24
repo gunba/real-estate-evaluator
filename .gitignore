@@ -154,3 +154,4 @@ cython_debug/
 # Geojson data
 *.geojson
 *.json
+*.txt
