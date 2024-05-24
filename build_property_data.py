@@ -64,8 +64,8 @@ with open('osm/osm_nodes_processed.geojson', 'r') as file:
     osm_node_data = json.load(file)
 
 # Load the student achievement data
-with open('scsa/processed_student_achievement_data.json') as f:
-    student_data = json.load(f)
+with open('scsa/processed_student_achievement_data.json') as file:
+    student_data = json.load(file)
 
 def build_school_data():
     """
@@ -118,9 +118,6 @@ def haversine_distance(lon1, lat1, lon2, lat2):
     return distance
 
 def process_property(property_data):
-    # Check if the suburb exists in the suburb data
-    suburb = property_data['reiwa_suburb']
-
     property_lon = property_data['reiwa_longitude']
     property_lat = property_data['reiwa_latitude']
 
@@ -224,5 +221,9 @@ if __name__ == '__main__':
     # Save the updated property data to a new JSON file
     with open('property_data.json', 'w') as file:
         json.dump(updated_property_data_list, file, indent=2)
+
+    # Output raw school data for mapping projects
+    with open('school_data.json', 'w') as file:
+        json.dump(scsa_school_data, file, indent=2)
 
     print("Property data updated with additional information and saved to 'property_data.json'.")

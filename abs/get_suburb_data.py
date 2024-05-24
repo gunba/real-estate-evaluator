@@ -85,11 +85,6 @@ def extract_table_view_data(tables_view, summary_data):
         # Clean the key as before
         header_key = 'abs_sub_' + clean_key(main_text)
 
-        summary_data[header_key] = {
-            "pct": {}, 
-            "val": {}
-        }
-
         for row in table.find_all('tr')[1:]:  # Skip header row
             th = row.find('th', class_='firstCol')
             td = row.find_all('td')
@@ -105,8 +100,8 @@ def extract_table_view_data(tables_view, summary_data):
                     percent = clean_value(percent)
                     
                     # Store the data in the flat dictionary
-                    summary_data[header_key]['val'][row_key] = value
-                    summary_data[header_key]['pct'][row_key] = percent/100
+                    summary_data[header_key + '_' + row_key + '_val'] = value
+                    summary_data[header_key + '_' + row_key + '_pct'] = percent/100
 
 def process_suburb(suburb):
     try:

@@ -9,8 +9,10 @@ def add_area_to_suburbs(file_path):
     # Earth's radius in kilometers (approximate)
     earth_radius = 6371
 
+    filtered_features = []
+
     for feature in geojson_data['features']:
-        if 'name' in feature['properties']:
+        if feature['geometry']['type'] == 'Polygon' and 'name' in feature['properties']:
             suburb_geometry = shape(feature['geometry'])
             suburb_area_sq_degrees = suburb_geometry.area
 
@@ -18,7 +20,9 @@ def add_area_to_suburbs(file_path):
             suburb_area_km2 = suburb_area_sq_degrees * (math.pi / 180) ** 2 * earth_radius ** 2
 
             feature['properties']['area_km2'] = suburb_area_km2
+            filtered_features.append(feature)
 
+    geojson_data['features'] = filtered_features
     return geojson_data
 
 def save_geojson_data(geojson_data, file_path):

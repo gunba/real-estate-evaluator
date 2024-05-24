@@ -1,7 +1,5 @@
 import json
 import datetime
-import os
-import re
 from multiprocessing.pool import ThreadPool
 
 def process_suburb(suburb):
@@ -50,16 +48,28 @@ def process_suburb(suburb):
             # Get the REIWA suburb data
             reiwa_suburb_data = reiwa_housing_data.get(matching_suburb['abs_scc_name'], {})
 
-            # Combine the crime data, census data, and REIWA suburb data for the suburb
-            return (matching_suburb['abs_scc_name'], {
-                **updated_current_data,
-                'wapol_total_person_crime': current_cat_crime['ap'],
-                'wapol_total_property_crime': current_cat_crime['apn'],
-                'wapol_avg_person_crime_prev_3y': previous_cat_crime['ap'],
-                'wapol_avg_property_crime_prev_3y': previous_cat_crime['apn'],
-                **{k: v for k, v in matching_suburb.items() if k not in ['abs_scc_code', 'abs_scc_name']},
-                **reiwa_suburb_data
-            })
+            if reiwa_suburb_data and 'reiwa_suburb_interest_level' in reiwa_suburb_data and reiwa_suburb_data['reiwa_suburb_interest_level'] is not None:
+                # Combine the crime data, census data, and REIWA suburb data for the suburb
+                combined_data = {
+                    **updated_current_data,
+                    'wapol_total_person_crime': current_cat_crime['ap'],
+                    'wapol_total_property_crime': current_cat_crime['apn'],
+                    'wapol_avg_person_crime_prev_3y': previous_cat_crime['ap'],
+                    'wapol_avg_property_crime_prev_3y': previous_cat_crime['apn'],
+                    **{k: v for k, v in matching_suburb.items() if k not in ['abs_scc_code', 'abs_scc_name']},
+                    **reiwa_suburb_data
+                }
+
+                # Find the coordinates for the suburb
+                coordinates = next(
+                    (feature['geometry']['coordinates'] for feature in osm_suburbs['features'] if feature['properties']['name'].lower() == suburb[0].lower()),
+                    None
+                )
+
+                if coordinates:
+                    combined_data['coordinates'] = coordinates
+
+                return matching_suburb['abs_scc_name'], combined_data
 
     return None
 
@@ -74,6 +84,10 @@ with open('abs/extracted_data.json', 'r') as file:
 # Load the REIWA housing data from reiwa/reiwa_housing_data.json
 with open('reiwa/reiwa_housing_data.json', 'r') as file:
     reiwa_housing_data = json.load(file)
+
+# Load the OSM suburbs data from osm_suburbs.geojson
+with open('osm/osm_suburbs_processed.geojson', 'r', encoding='utf-8') as file:
+    osm_suburbs = json.load(file)
 
 # Get the current financial year
 current_year = datetime.datetime.now().year
