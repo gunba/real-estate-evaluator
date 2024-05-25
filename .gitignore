@@ -154,9 +154,11 @@ cython_debug/
 # Geojson data
 *.geojson
 *.json
-*.txt
 mesh/shapefile_data/MB_2021_AUST_GDA2020.xml
 mesh/shapefile_data/MB_2021_AUST_GDA2020.shx
 mesh/shapefile_data/MB_2021_AUST_GDA2020.shp
 mesh/shapefile_data/MB_2021_AUST_GDA2020.prj
 mesh/shapefile_data/MB_2021_AUST_GDA2020.dbf
+osm/logs/valid_properties.txt
+osm/logs/suburb_names.txt
+osm/logs/property_combinations.txt
