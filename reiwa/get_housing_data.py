@@ -56,7 +56,7 @@ def get_reiwa_suburb(suburb_name_raw):
         interest_level_props = json.loads(interest_level_element["data-props"].replace("&quot;", "\""))
         data["reiwa_suburb_interest_level"] = interest_level_props["interestLevel"]
     else:
-        data["reiwa_suburb_interest_level"] = ""
+        data["reiwa_suburb_interest_level"] = 0
 
     return data
 
@@ -75,7 +75,7 @@ with open('../abs/census_data_processed.json', 'r') as file:
 reiwa_housing_data = {}
 
 # Use ThreadPoolExecutor to fetch data concurrently
-with ThreadPoolExecutor(max_workers=24) as executor:
+with ThreadPoolExecutor() as executor:
     futures = [executor.submit(fetch_suburb_data, suburb) for suburb in census_data.values()]
     for future in as_completed(futures):
         suburb_name, data = future.result()

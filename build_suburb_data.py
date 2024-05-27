@@ -59,7 +59,7 @@ def process_suburb(suburb):
             # Get the REIWA suburb data
             reiwa_suburb_data = reiwa_housing_data.get(matching_suburb['abs_scc_name'], {})
 
-            if reiwa_suburb_data and 'reiwa_suburb_interest_level' in reiwa_suburb_data and reiwa_suburb_data['reiwa_suburb_interest_level'] is not None:
+            if reiwa_suburb_data and 'reiwa_median_house_sale' in reiwa_suburb_data:
                 # Combine the data for the suburb
                 combined_data = {
                     **updated_current_data,

@@ -6,7 +6,7 @@ import io
 import os
 import shapefile  # pyshp library
 import pandas as pd
-from geojson import Feature, FeatureCollection, Point
+from geojson import Feature, FeatureCollection
 
 # URLs for the required files
 census_csv_url = "https://www.abs.gov.au/census/guide-census-data/mesh-block-counts/2021/Mesh%20Block%20Counts%2C%202021.xlsx"
