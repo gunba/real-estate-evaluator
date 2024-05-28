@@ -8,8 +8,7 @@ This repository contains tools to predict real estate values in Perth using mach
 
 ### Data Collection
 - **ABS Data**: Census and demographic information.
-- **Content Data**: Additional contextual data.
-- **Mesh Data**: Spatial data for properties.
+- **Mesh Data**: Mesh block residency data
 - **OSM Data**: OpenStreetMap data for geographic features.
 - **REIWA Data**: Real estate information.
 - **SCSA Data**: School and education data.
